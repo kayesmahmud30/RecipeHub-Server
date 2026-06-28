@@ -1,16 +1,17 @@
-const express = require("express");
-const app = express();
-const port = process.env.PORT || 8000;
-const cors = require("cors");
+const dns = require("node:dns");
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 require("dotenv").config();
-// const { createRemoteJWKSet, jwtVerify } = require("jose");
-const { jwtVerify, createRemoteJWKSet } = require("jose-cjs");
-
-const JWKS = createRemoteJWKSet(
-  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
-);
-
+const express = require("express");
+const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { verify } = require("node:crypto");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
+const app = express();
+const port = process.env.PORT;
+
+app.use(cors());
+app.use(express.json());
+
 const uri = process.env.MONGODB_CONNECTION;
 
 const client = new MongoClient(uri, {
@@ -21,79 +22,26 @@ const client = new MongoClient(uri, {
   },
 });
 
-
-
-const db = client.db("recipe-hub-server");
-const recipeCollection = db.collection("recipe-collection");
-const sessionCollection = db.collection("session");
-const userCollection = db.collection("user");
-const myFavoritesCollections = db.collection("favorites");
-const planCollection = db.collection("plans");
-const subsCollection = db.collection("subscriptions");
-const purchasedRecipes = db.collection("purchasedRecipes");
-const featuredCollection = db.collection("featured");
-const reportCollection = db.collection("reports");
-const likedRecipesCollection = db.collection("likedRecipes");
-
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
-}));
-app.use(express.json());
-
-
-client.connect()
-  // .then(() => client.db("admin").command({ ping: 1 }))
-  .then(() => console.log("Successfully connected to MongoDB!"))
-  .catch((err) => console.error("MongoDB connection failed:", err.message));
-
-
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.NEXT_CLIENT_URL}/api/auth/jwks`),
+);
 
 const verifyToken = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+  const authHeader = req?.headers?.authorization;
   if (!authHeader) {
-    return res.status(401).send({ message: "Unauthorized access" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
   const token = authHeader.split(" ")[1];
   if (!token) {
-    return res.status(401).send({ message: "Unauthorized access" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
-
   try {
     const { payload } = await jwtVerify(token, JWKS);
-    
-    const userId = payload.sub;
-    if (!userId) {
-       return res.status(401).send({ message: "Invalid token payload" });
-    }
-
-    let userQuery;
-    if (ObjectId.isValid(userId)) {
-      // It might be stored as an ObjectId or string, check ObjectId first
-      userQuery = { _id: new ObjectId(userId) };
-    } else {
-      userQuery = { _id: userId };
-    }
-
-    let user = await userCollection.findOne(userQuery);
-    
-    // Fallback if better-auth stored it purely as string in MongoDB
-    if (!user && ObjectId.isValid(userId)) {
-      user = await userCollection.findOne({ _id: userId });
-    }
-
-    if (!user) {
-      return res.status(403).send({ message: "User not found" });
-    }
-    
-    req.user = user;
     next();
   } catch (error) {
-    console.error("JWT Verification failed Error Details:", error.message);
-    return res.status(403).send({ message: "forbidden" });
+    return res.status(403).json({ message: "Forbidden" });
   }
 };
-
 
 const verifyUser = async (req, res, next) => {
   const user = await req.user;
@@ -112,15 +60,30 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
-app.get("/", (req, res) => {
+const run = async () => {
+  try {
+    // await client.connect();
+    const database = client.db("idea_vault");
+    const ideasCollection = database.collection("ideas");
+const db = client.db("recipe-hub-server");
+const recipeCollection = db.collection("recipe-collection");
+const sessionCollection = db.collection("session");
+const userCollection = db.collection("user");
+const myFavoritesCollections = db.collection("favorites");
+const planCollection = db.collection("plans");
+const subsCollection = db.collection("subscriptions");
+const purchasedRecipes = db.collection("purchasedRecipes");
+const featuredCollection = db.collection("featured");
+const reportCollection = db.collection("reports");
+const likedRecipesCollection = db.collection("likedRecipes");
+
+
+    app.get("/", (req, res) => {
   res.send("recipe hub server is running");
 });
 
 
-    
-
-    
-    app.get("/api/recipes", async (req, res) => {
+     app.get("/api/recipes", async (req, res) => {
       try {
         
         const page = parseInt(req.query.page) || 1;
@@ -150,7 +113,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/recipes/:id", async (req, res) => {
+    app.get("/api/recipes/:id", verifyToken ,async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -259,13 +222,22 @@ app.get("/", (req, res) => {
     
     app.get("/api/check-purchase", verifyToken, async (req, res) => {
       try {
-        const { customerEmail, recipeId } = req.query;
+        const { recipeId } = req.query;
 
         if (!recipeId) {
           return res.json({ canPurchase: true }); 
         }
 
-        const query = { customerEmail, recipeId };
+        // Check if user is the recipe owner
+        const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
+        if (recipe && recipe.authorId === req.user._id.toString()) {
+          return res.json({
+            canPurchase: false,
+            message: "You cannot purchase your own recipe.",
+          });
+        }
+
+        const query = { customerEmail: req.user.email, recipeId };
         const alreadyPurchased = await purchasedRecipes.findOne(query);
 
         if (alreadyPurchased) {
@@ -475,6 +447,15 @@ app.get("/", (req, res) => {
         
         if (recipeId) {
           
+          // Check if user is the recipe owner
+          const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
+          if (recipe && recipe.authorId === req.user._id.toString()) {
+            return res.status(403).json({
+              success: false,
+              message: "You cannot purchase your own recipe.",
+            });
+          }
+
           if (sessionId) {
             const sessionCheck = await purchasedRecipes.findOne({
               sessionId: sessionId,
@@ -492,7 +473,7 @@ app.get("/", (req, res) => {
           const alreadyPurchased = await purchasedRecipes.findOne(query);
 
           if (alreadyPurchased) {
-            return res.status(400).json({
+            return res.status(409).json({
               success: false,
               message: "You have already purchased this recipe!",
             });
@@ -997,7 +978,20 @@ app.get("/", (req, res) => {
       },
     );
 
-app.listen(port, () => {
-  console.log(`recipe hub server is running in ${port}`);
+    // await client.db("admin").command({ ping: 1 });
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
+  } finally {
+    // await client.close();
+  }
+};
+run().catch(console.dir);
+
+app.get("/", (req, res) => {
+  res.send("Welcome to Server!");
 });
 
+app.listen(port, () => {
+  console.log(`Server is listening on port ${port}`);
+});
