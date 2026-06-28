@@ -43,7 +43,7 @@ app.use(express.json());
 
 
 client.connect()
-  .then(() => client.db("admin").command({ ping: 1 }))
+  // .then(() => client.db("admin").command({ ping: 1 }))
   .then(() => console.log("Successfully connected to MongoDB!"))
   .catch((err) => console.error("MongoDB connection failed:", err.message));
 
@@ -89,10 +89,7 @@ const verifyToken = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    console.error("====== JWT VERIFICATION FAILED ======");
-    console.error("Error Message:", error.message);
-    console.error("Token that was passed:", token);
-    console.error("=====================================");
+    console.error("JWT Verification failed Error Details:", error.message);
     return res.status(403).send({ message: "forbidden" });
   }
 };
@@ -262,22 +259,13 @@ app.get("/", (req, res) => {
     
     app.get("/api/check-purchase", verifyToken, async (req, res) => {
       try {
-        const { recipeId } = req.query;
+        const { customerEmail, recipeId } = req.query;
 
         if (!recipeId) {
           return res.json({ canPurchase: true }); 
         }
 
-        // Check if user is the recipe owner
-        const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
-        if (recipe && recipe.authorId === req.user._id.toString()) {
-          return res.json({
-            canPurchase: false,
-            message: "You cannot purchase your own recipe.",
-          });
-        }
-
-        const query = { customerEmail: req.user.email, recipeId };
+        const query = { customerEmail, recipeId };
         const alreadyPurchased = await purchasedRecipes.findOne(query);
 
         if (alreadyPurchased) {
@@ -487,15 +475,6 @@ app.get("/", (req, res) => {
         
         if (recipeId) {
           
-          // Check if user is the recipe owner
-          const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
-          if (recipe && recipe.authorId === req.user._id.toString()) {
-            return res.status(403).json({
-              success: false,
-              message: "You cannot purchase your own recipe.",
-            });
-          }
-
           if (sessionId) {
             const sessionCheck = await purchasedRecipes.findOne({
               sessionId: sessionId,
@@ -513,7 +492,7 @@ app.get("/", (req, res) => {
           const alreadyPurchased = await purchasedRecipes.findOne(query);
 
           if (alreadyPurchased) {
-            return res.status(409).json({
+            return res.status(400).json({
               success: false,
               message: "You have already purchased this recipe!",
             });
