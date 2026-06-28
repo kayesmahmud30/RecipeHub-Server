@@ -42,10 +42,10 @@ app.use(cors({
 app.use(express.json());
 
 
-client.connect()
-  .then(() => client.db("admin").command({ ping: 1 }))
-  .then(() => console.log("Successfully connected to MongoDB!"))
-  .catch((err) => console.error("MongoDB connection failed:", err.message));
+// client.connect()
+//   .then(() => client.db("admin").command({ ping: 1 }))
+//   .then(() => console.log("Successfully connected to MongoDB!"))
+//   .catch((err) => console.error("MongoDB connection failed:", err.message));
 
 
 
