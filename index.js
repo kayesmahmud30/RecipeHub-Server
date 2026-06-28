@@ -35,10 +35,7 @@ const featuredCollection = db.collection("featured");
 const reportCollection = db.collection("reports");
 const likedRecipesCollection = db.collection("likedRecipes");
 
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
-}));
+app.use(cors());
 app.use(express.json());
 
 
