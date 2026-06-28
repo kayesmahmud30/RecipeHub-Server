@@ -1,17 +1,16 @@
-const dns = require("node:dns");
-dns.setServers(["1.1.1.1", "8.8.8.8"]);
-require("dotenv").config();
 const express = require("express");
-const cors = require("cors");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const { verify } = require("node:crypto");
-const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 const app = express();
-const port = process.env.PORT;
+const port = process.env.PORT || 8000;
+const cors = require("cors");
+require("dotenv").config();
+// const { createRemoteJWKSet, jwtVerify } = require("jose");
+const { jwtVerify, createRemoteJWKSet } = require("jose-cjs");
 
-app.use(cors());
-app.use(express.json());
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
+);
 
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = process.env.MONGODB_CONNECTION;
 
 const client = new MongoClient(uri, {
@@ -22,26 +21,82 @@ const client = new MongoClient(uri, {
   },
 });
 
-const JWKS = createRemoteJWKSet(
-  new URL(`${process.env.NEXT_CLIENT_URL}/api/auth/jwks`),
-);
+
+
+const db = client.db("recipe-hub-server");
+const recipeCollection = db.collection("recipe-collection");
+const sessionCollection = db.collection("session");
+const userCollection = db.collection("user");
+const myFavoritesCollections = db.collection("favorites");
+const planCollection = db.collection("plans");
+const subsCollection = db.collection("subscriptions");
+const purchasedRecipes = db.collection("purchasedRecipes");
+const featuredCollection = db.collection("featured");
+const reportCollection = db.collection("reports");
+const likedRecipesCollection = db.collection("likedRecipes");
+
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true
+}));
+app.use(express.json());
+
+
+client.connect()
+  .then(() => client.db("admin").command({ ping: 1 }))
+  .then(() => console.log("Successfully connected to MongoDB!"))
+  .catch((err) => console.error("MongoDB connection failed:", err.message));
+
+
 
 const verifyToken = async (req, res, next) => {
-  const authHeader = req?.headers?.authorization;
+  const authHeader = req.headers.authorization;
   if (!authHeader) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).send({ message: "Unauthorized access" });
   }
   const token = authHeader.split(" ")[1];
   if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).send({ message: "Unauthorized access" });
   }
+
   try {
     const { payload } = await jwtVerify(token, JWKS);
+    
+    const userId = payload.sub;
+    if (!userId) {
+       return res.status(401).send({ message: "Invalid token payload" });
+    }
+
+    let userQuery;
+    if (ObjectId.isValid(userId)) {
+      // It might be stored as an ObjectId or string, check ObjectId first
+      userQuery = { _id: new ObjectId(userId) };
+    } else {
+      userQuery = { _id: userId };
+    }
+
+    let user = await userCollection.findOne(userQuery);
+    
+    // Fallback if better-auth stored it purely as string in MongoDB
+    if (!user && ObjectId.isValid(userId)) {
+      user = await userCollection.findOne({ _id: userId });
+    }
+
+    if (!user) {
+      return res.status(403).send({ message: "User not found" });
+    }
+    
+    req.user = user;
     next();
   } catch (error) {
-    return res.status(403).json({ message: "Forbidden" });
+    console.error("====== JWT VERIFICATION FAILED ======");
+    console.error("Error Message:", error.message);
+    console.error("Token that was passed:", token);
+    console.error("=====================================");
+    return res.status(403).send({ message: "forbidden" });
   }
 };
+
 
 const verifyUser = async (req, res, next) => {
   const user = await req.user;
@@ -51,6 +106,7 @@ const verifyUser = async (req, res, next) => {
   next();
 };
 
+
 const verifyAdmin = async (req, res, next) => {
   const user = await req.user;
   if (user.role !== "admin") {
@@ -59,28 +115,17 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
-const run = async () => {
-  try {
-    // await client.connect();
-    // const database = client.db("recipe-hub-server");
-    const db = client.db("recipe-hub-server");
-    const recipeCollection = db.collection("recipe-collection");
-    const sessionCollection = db.collection("session");
-    const userCollection = db.collection("user");
-    const myFavoritesCollections = db.collection("favorites");
-    const planCollection = db.collection("plans");
-    const subsCollection = db.collection("subscriptions");
-    const purchasedRecipes = db.collection("purchasedRecipes");
-    const featuredCollection = db.collection("featured");
-    const reportCollection = db.collection("reports");
-    const likedRecipesCollection = db.collection("likedRecipes");
+app.get("/", (req, res) => {
+  res.send("recipe hub server is running");
+});
 
-    app.get("/", (req, res) => {
-      res.send("recipe hub server is running");
-    });
 
+    
+
+    
     app.get("/api/recipes", async (req, res) => {
       try {
+        
         const page = parseInt(req.query.page) || 1;
         const size = parseInt(req.query.size) || 10;
         const category = req.query.category || "";
@@ -107,7 +152,8 @@ const run = async () => {
       }
     });
 
-    app.get("/api/recipes/:id", verifyToken, async (req, res) => {
+    
+    app.get("/api/recipes/:id", async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -129,7 +175,9 @@ const run = async () => {
       }
     });
 
-    app.get("/api/recipe/authorId", async (req, res) => {
+    
+
+    app.get("/api/recipe/authorId", verifyToken, async (req, res) => {
       try {
         const authorId = req.query.authorId;
         const query = {};
@@ -146,7 +194,8 @@ const run = async () => {
       }
     });
 
-    app.get("/app/myFavorites", verifyUser, async (req, res) => {
+    
+    app.get("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       const userId = req.query.userId;
       const query = {};
       if (req.query.userId) {
@@ -158,6 +207,7 @@ const run = async () => {
       res.json(result);
     });
 
+    
     app.get("/api/plans", async (req, res) => {
       try {
         const query = {};
@@ -165,6 +215,7 @@ const run = async () => {
           query.planId = req.query.planId;
         }
 
+        
         const result = await planCollection.find(query).toArray();
 
         res.json(result);
@@ -173,9 +224,10 @@ const run = async () => {
       }
     });
 
+    
     app.get(
       "/api/subscriptions",
-      
+      verifyToken,
       verifyAdmin,
       async (req, res) => {
         const cursor = subsCollection.find();
@@ -184,9 +236,10 @@ const run = async () => {
       },
     );
 
+    
     app.get(
       "/api/purchasedData",
-      
+      verifyToken,
       verifyAdmin,
       async (req, res) => {
         const cursor = purchasedRecipes.find();
@@ -195,7 +248,8 @@ const run = async () => {
       },
     );
 
-    app.get("/api/purchased", verifyUser, async (req, res) => {
+    
+    app.get("/api/purchased", verifyToken, verifyUser, async (req, res) => {
       const userEmail = req.query.email;
       const query = {};
       if (req.query.email) {
@@ -205,18 +259,17 @@ const run = async () => {
       res.json(result);
     });
 
-    app.get("/api/check-purchase", async (req, res) => {
+    
+    app.get("/api/check-purchase", verifyToken, async (req, res) => {
       try {
         const { recipeId } = req.query;
 
         if (!recipeId) {
-          return res.json({ canPurchase: true });
+          return res.json({ canPurchase: true }); 
         }
 
         // Check if user is the recipe owner
-        const recipe = await recipeCollection.findOne({
-          _id: new ObjectId(recipeId),
-        });
+        const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
         if (recipe && recipe.authorId === req.user._id.toString()) {
           return res.json({
             canPurchase: false,
@@ -240,7 +293,8 @@ const run = async () => {
       }
     });
 
-    app.get("/api/premiumuser", verifyAdmin, async (req, res) => {
+    
+    app.get("/api/premiumuser", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const query = { plan: "Recipehub_Premium" };
         const cursor = userCollection.find(query);
@@ -251,45 +305,51 @@ const run = async () => {
       }
     });
 
-    app.get("/api/reports", verifyAdmin, async (req, res) => {
+    
+    app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
       const cursor = reportCollection.find();
       const result = await cursor.toArray();
       res.json(result);
     });
 
+    
     app.get("/api/featured", async (req, res) => {
       const cursor = featuredCollection.find();
       const recipes = await cursor.toArray();
       res.json(recipes);
     });
 
-    app.get("/api/featured/:id", verifyUser, async (req, res) => {
+    
+    app.get("/api/featured/:id", verifyToken, verifyUser, async (req, res) => {
       const id = req.params.id;
       console.log(id, "id");
 
-      const query = { _id: new ObjectId(id) };
+      const query = { _id: new ObjectId(id) }; 
 
       const result = await featuredCollection.findOne(query);
       console.log(result, "recipe");
       res.json(result);
     });
 
+    
     app.get("/api/mostLiked", async (req, res) => {
       try {
         const result = await recipeCollection
-          .find()
-          .sort({ likesCount: -1 })
-          .limit(4)
-          .toArray();
+          .find() 
+          .sort({ likesCount: -1 }) 
+          .limit(4) 
+          .toArray(); 
 
-        res.send(result);
+        res.send(result); 
       } catch (error) {
         console.error("Error fetching most liked recipes:", error);
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
 
-    app.post("/api/recipes", verifyUser, async (req, res) => {
+    
+    
+    app.post("/api/recipes", verifyToken, verifyUser, async (req, res) => {
       const recipe = req.body;
       const newRecipe = {
         ...recipe,
@@ -300,30 +360,35 @@ const run = async () => {
       res.json({ insertedId: result.insertedId.toString() });
     });
 
-    app.post("/app/myFavorites", verifyUser, async (req, res) => {
+    
+    app.post("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       try {
         const data = req.body;
-        const { _id, ...recipeData } = data;
+        const { _id, ...recipeData } = data; 
 
         const recipeId = _id;
-        const userId = recipeData.userId;
+        const userId = recipeData.userId; 
 
+        
         const query = { userId: userId, recipeId: recipeId };
         const alreadyFavorited = await myFavoritesCollections.findOne(query);
 
         if (alreadyFavorited) {
+          
           return res.status(400).json({
             success: false,
             message: "You have already added this recipe to your favorites!",
           });
         }
 
+        
         const favorite = {
           ...recipeData,
           recipeId: recipeId,
           createdAt: new Date(),
         };
 
+        
         const result = await myFavoritesCollections.insertOne(favorite);
 
         res.status(201).json({
@@ -337,10 +402,11 @@ const run = async () => {
       }
     });
 
-    app.post("/api/featuring", verifyAdmin, async (req, res) => {
+    
+    app.post("/api/featuring", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const data = req.body;
-        const recipeId = data._id;
+        const recipeId = data._id; 
 
         if (!recipeId) {
           return res
@@ -348,14 +414,20 @@ const run = async () => {
             .json({ success: false, message: "Recipe ID is required" });
         }
 
+        
         const query = { recipeId: recipeId };
         const alreadyFeatured = await featuredCollection.findOne(query);
 
+        
         const recipeFilter = { _id: new ObjectId(recipeId) };
 
         if (alreadyFeatured) {
+          
+
+          
           await featuredCollection.deleteOne(query);
 
+          
           await recipeCollection.updateOne(recipeFilter, {
             $set: { isFeatured: false },
           });
@@ -366,6 +438,9 @@ const run = async () => {
             isFeatured: false,
           });
         } else {
+          
+
+          
           const { _id, ...restOfData } = data;
           const featured = {
             ...restOfData,
@@ -373,8 +448,10 @@ const run = async () => {
             createdAt: new Date(),
           };
 
+          
           const result = await featuredCollection.insertOne(featured);
 
+          
           await recipeCollection.updateOne(recipeFilter, {
             $set: { isFeatured: true },
           });
@@ -392,7 +469,8 @@ const run = async () => {
       }
     });
 
-    app.post("/api/subs", async (req, res) => {
+    
+    app.post("/api/subs", verifyToken, async (req, res) => {
       try {
         const data = req.body;
         const subsInfo = {
@@ -402,13 +480,15 @@ const run = async () => {
 
         const userEmail = subsInfo.customerEmail;
         const recipeId = subsInfo.recipeId;
-        const sessionId = subsInfo.sessionId;
+        const sessionId = subsInfo.sessionId; 
 
+        
+        
+        
         if (recipeId) {
+          
           // Check if user is the recipe owner
-          const recipe = await recipeCollection.findOne({
-            _id: new ObjectId(recipeId),
-          });
+          const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
           if (recipe && recipe.authorId === req.user._id.toString()) {
             return res.status(403).json({
               success: false,
@@ -422,6 +502,7 @@ const run = async () => {
             });
             if (sessionCheck) {
               return res.status(200).json({
+                
                 success: true,
                 message: "This purchase has already been recorded!",
               });
@@ -447,7 +528,11 @@ const run = async () => {
           });
         }
 
+        
+        
+        
         if (!recipeId) {
+          
           if (sessionId) {
             const sessionCheck = await subsCollection.findOne({
               sessionId: sessionId,
@@ -460,8 +545,10 @@ const run = async () => {
             }
           }
 
+          
           const result = await subsCollection.insertOne(subsInfo);
 
+          
           const filter = { email: userEmail };
           const updateDocument = {
             $set: { plan: data.planId },
@@ -484,7 +571,8 @@ const run = async () => {
       }
     });
 
-    app.post("/api/reports", verifyUser, async (req, res) => {
+    
+    app.post("/api/reports", verifyToken, verifyUser, async (req, res) => {
       try {
         const report = req.body;
         if (!report) {
@@ -512,6 +600,7 @@ const run = async () => {
           data: result,
         });
       } catch (error) {
+        
         console.error("Error in /api/reports:", error);
         return res.status(500).json({
           success: false,
@@ -521,9 +610,11 @@ const run = async () => {
       }
     });
 
-    app.post("/app/liked", verifyUser, async (req, res) => {
-      const { recipeId, userId, creatorId } = req.body;
+    
+    app.post("/app/liked", verifyToken, verifyUser, async (req, res) => {
+      const { recipeId, userId, creatorId } = req.body; 
 
+      
       if (!recipeId || !userId || !creatorId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -533,6 +624,7 @@ const run = async () => {
         const uId = new ObjectId(userId);
         const cId = new ObjectId(creatorId);
 
+        
         const alreadyLiked = await likedRecipesCollection.findOne({
           recipeId: rId,
           userId: uId,
@@ -544,22 +636,26 @@ const run = async () => {
             .json({ message: "You already liked this recipe" });
         }
 
+        
         await likedRecipesCollection.insertOne({
           recipeId: rId,
           userId: uId,
           createdAt: new Date(),
         });
 
+        
         const recipeUpdate = await recipeCollection.updateOne(
           { _id: rId },
           { $inc: { likesCount: 1 } },
         );
 
+        
         const creatorUpdate = await userCollection.updateOne(
           { _id: cId },
           { $inc: { likesCount: 1 } },
         );
 
+        
         if (
           recipeUpdate.modifiedCount === 0 ||
           creatorUpdate.modifiedCount === 0
@@ -578,7 +674,10 @@ const run = async () => {
       }
     });
 
-    app.patch("/api/recipes",  async (req, res) => {
+    
+    
+
+    app.patch("/api/recipes", verifyToken, async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -595,10 +694,12 @@ const run = async () => {
             .json({ success: false, message: "Data not found" });
         }
         const query = { _id: new ObjectId(id) };
-
+        
         const updateFields = {};
 
+        
         for (const key in updatedData) {
+          
           if (key !== "id" && updatedData[key] !== "") {
             updateFields[key] = updatedData[key];
           }
@@ -611,6 +712,7 @@ const run = async () => {
             .json({ success: false, message: "No valid fields to update" });
         }
 
+        
         const result = await recipeCollection.updateOne(query, {
           $set: updateFields,
         });
@@ -632,7 +734,8 @@ const run = async () => {
       }
     });
 
-    app.patch("/api/user", verifyUser, async (req, res) => {
+    
+    app.patch("/api/user", verifyToken, verifyUser, async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -649,10 +752,12 @@ const run = async () => {
             .json({ success: false, message: "Data not found" });
         }
         const query = { _id: new ObjectId(id) };
-
+        
         const updateFields = {};
 
+        
         for (const key in updatedData) {
+          
           if (key !== "id" && updatedData[key] !== "") {
             updateFields[key] = updatedData[key];
           }
@@ -665,6 +770,7 @@ const run = async () => {
             .json({ success: false, message: "No valid fields to update" });
         }
 
+        
         const result = await userCollection.updateOne(query, {
           $set: updateFields,
         });
@@ -686,9 +792,10 @@ const run = async () => {
       }
     });
 
+    
     app.patch(
       "/api/admin/user-status",
-  
+      verifyToken,
       verifyAdmin,
       async (req, res) => {
         try {
@@ -711,6 +818,7 @@ const run = async () => {
               .json({ success: false, message: "Blocked value is required" });
           }
 
+          
           const targetUser = await userCollection.findOne({
             _id: new ObjectId(id),
           });
@@ -721,6 +829,7 @@ const run = async () => {
               .json({ success: false, message: "User not found" });
           }
 
+          
           if (targetUser.role === "admin") {
             return res.status(403).json({
               success: false,
@@ -728,6 +837,7 @@ const run = async () => {
             });
           }
 
+          
           if (targetUser._id.toString() === req.user._id.toString()) {
             return res.status(403).json({
               success: false,
@@ -735,10 +845,12 @@ const run = async () => {
             });
           }
 
+          
           const isBlocked = blockedInput === "true" || blockedInput === true;
 
           const query = { _id: new ObjectId(id) };
 
+          
           const result = await userCollection.updateOne(query, {
             $set: { blocked: isBlocked },
           });
@@ -750,10 +862,12 @@ const run = async () => {
           }
 
           if (result.modifiedCount === 0) {
-            return res.status(200).json({
-              success: true,
-              message: "No changes made to user status",
-            });
+            return res
+              .status(200)
+              .json({
+                success: true,
+                message: "No changes made to user status",
+              });
           }
 
           const statusMessage = isBlocked
@@ -771,11 +885,15 @@ const run = async () => {
       },
     );
 
-    app.delete("/api/recipes", async (req, res) => {
-      try {
-        const id = req.query.id;
-        console.log(id, "deleted recipe id");
+    
 
+    
+    app.delete("/api/recipes", verifyToken, async (req, res) => {
+      try {
+        const id = req.query.id; 
+        console.log(id, "deleted recipe id"); 
+
+        
         if (!id || id === "undefined") {
           return res
             .status(400)
@@ -785,6 +903,7 @@ const run = async () => {
         const query = { _id: new ObjectId(id) };
         const result = await recipeCollection.deleteOne(query);
 
+        
         return res.json(result);
       } catch (error) {
         console.error("Express Delete Error:", error);
@@ -792,11 +911,13 @@ const run = async () => {
       }
     });
 
-    app.delete("/api/favorite", verifyUser, async (req, res) => {
+    
+    app.delete("/api/favorite", verifyToken, verifyUser, async (req, res) => {
       try {
-        const id = req.query.id;
-        console.log(id, "deleted recipe id");
+        const id = req.query.id; 
+        console.log(id, "deleted recipe id"); 
 
+        
         if (!id || id === "undefined") {
           return res
             .status(400)
@@ -806,6 +927,7 @@ const run = async () => {
         const query = { _id: new ObjectId(id) };
         const result = await myFavoritesCollections.deleteOne(query);
 
+        
         return res.json(result);
       } catch (error) {
         console.error("Express Delete Error:", error);
@@ -813,8 +935,10 @@ const run = async () => {
       }
     });
 
-    app.delete("/api/report", verifyAdmin, async (req, res) => {
+    
+    app.delete("/api/report", verifyToken, verifyAdmin, async (req, res) => {
       try {
+        
         const { recipeId, _id } = req.body;
 
         if (!recipeId || !_id) {
@@ -823,14 +947,17 @@ const run = async () => {
             .json({ message: "recipeId and report id are required" });
         }
 
+        
         const recipeResult = await recipeCollection.deleteOne({
           _id: new ObjectId(recipeId),
         });
 
+        
         const reportResult = await reportCollection.deleteOne({
           _id: new ObjectId(_id),
         });
 
+        
         if (
           recipeResult.deletedCount === 0 &&
           reportResult.deletedCount === 0
@@ -851,21 +978,28 @@ const run = async () => {
       }
     });
 
+    
+
+    
     app.delete(
       "/api/reportRemove",
+      verifyToken,
       verifyAdmin,
       async (req, res) => {
         try {
+          
           const { _id } = req.body;
 
           if (!_id) {
             return res.status(400).json({ message: " report id are required" });
           }
 
+          
           const reportResult = await reportCollection.deleteOne({
             _id: new ObjectId(_id),
           });
 
+          
           if (reportResult.deletedCount === 0) {
             return res
               .status(404)
@@ -884,20 +1018,6 @@ const run = async () => {
       },
     );
 
-    // await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
-  } finally {
-    // await client.close();
-  }
-};
-run().catch(console.dir);
-
-app.get("/", (req, res) => {
-  res.send("Welcome to Server!");
-});
-
 app.listen(port, () => {
-  console.log(`Server is listening on port ${port}`);
+  console.log(`recipe hub server is running in ${port}`);
 });
