@@ -192,7 +192,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
+    app.get("/app/myFavorites",  verifyUser, async (req, res) => {
       const userId = req.query.userId;
       const query = {};
       if (req.query.userId) {
@@ -224,7 +224,6 @@ app.get("/", (req, res) => {
     
     app.get(
       "/api/subscriptions",
-      verifyToken,
       verifyAdmin,
       async (req, res) => {
         const cursor = subsCollection.find();
@@ -236,7 +235,6 @@ app.get("/", (req, res) => {
     
     app.get(
       "/api/purchasedData",
-      verifyToken,
       verifyAdmin,
       async (req, res) => {
         const cursor = purchasedRecipes.find();
@@ -246,7 +244,7 @@ app.get("/", (req, res) => {
     );
 
     
-    app.get("/api/purchased", verifyToken, verifyUser, async (req, res) => {
+    app.get("/api/purchased", verifyUser, async (req, res) => {
       const userEmail = req.query.email;
       const query = {};
       if (req.query.email) {
@@ -257,7 +255,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/check-purchase", verifyToken, async (req, res) => {
+    app.get("/api/check-purchase",  async (req, res) => {
       try {
         const { recipeId } = req.query;
 
@@ -291,7 +289,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/premiumuser", verifyToken, verifyAdmin, async (req, res) => {
+    app.get("/api/premiumuser",  verifyAdmin, async (req, res) => {
       try {
         const query = { plan: "Recipehub_Premium" };
         const cursor = userCollection.find(query);
@@ -303,7 +301,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
+    app.get("/api/reports",  verifyAdmin, async (req, res) => {
       const cursor = reportCollection.find();
       const result = await cursor.toArray();
       res.json(result);
@@ -317,7 +315,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/featured/:id", verifyToken, verifyUser, async (req, res) => {
+    app.get("/api/featured/:id",  verifyUser, async (req, res) => {
       const id = req.params.id;
       console.log(id, "id");
 
@@ -346,7 +344,7 @@ app.get("/", (req, res) => {
 
     
     
-    app.post("/api/recipes", verifyToken, verifyUser, async (req, res) => {
+    app.post("/api/recipes",  verifyUser, async (req, res) => {
       const recipe = req.body;
       const newRecipe = {
         ...recipe,
@@ -358,7 +356,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
+    app.post("/app/myFavorites",  verifyUser, async (req, res) => {
       try {
         const data = req.body;
         const { _id, ...recipeData } = data; 
@@ -400,7 +398,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/featuring", verifyToken, verifyAdmin, async (req, res) => {
+    app.post("/api/featuring",  verifyAdmin, async (req, res) => {
       try {
         const data = req.body;
         const recipeId = data._id; 
@@ -467,7 +465,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/subs", verifyToken, async (req, res) => {
+    app.post("/api/subs", async (req, res) => {
       try {
         const data = req.body;
         const subsInfo = {
@@ -569,7 +567,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/reports", verifyToken, verifyUser, async (req, res) => {
+    app.post("/api/reports",  verifyUser, async (req, res) => {
       try {
         const report = req.body;
         if (!report) {
@@ -608,7 +606,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/app/liked", verifyToken, verifyUser, async (req, res) => {
+    app.post("/app/liked",  verifyUser, async (req, res) => {
       const { recipeId, userId, creatorId } = req.body; 
 
       
@@ -674,7 +672,7 @@ app.get("/", (req, res) => {
     
     
 
-    app.patch("/api/recipes", verifyToken, async (req, res) => {
+    app.patch("/api/recipes", async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -732,7 +730,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.patch("/api/user", verifyToken, verifyUser, async (req, res) => {
+    app.patch("/api/user",  verifyUser, async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -792,7 +790,6 @@ app.get("/", (req, res) => {
     
     app.patch(
       "/api/admin/user-status",
-      verifyToken,
       verifyAdmin,
       async (req, res) => {
         try {
@@ -885,7 +882,7 @@ app.get("/", (req, res) => {
     
 
     
-    app.delete("/api/recipes", verifyToken, async (req, res) => {
+    app.delete("/api/recipes", async (req, res) => {
       try {
         const id = req.query.id; 
         console.log(id, "deleted recipe id"); 
@@ -909,7 +906,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.delete("/api/favorite", verifyToken, verifyUser, async (req, res) => {
+    app.delete("/api/favorite", verifyUser, async (req, res) => {
       try {
         const id = req.query.id; 
         console.log(id, "deleted recipe id"); 
@@ -933,7 +930,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.delete("/api/report", verifyToken, verifyAdmin, async (req, res) => {
+    app.delete("/api/report",  verifyAdmin, async (req, res) => {
       try {
         
         const { recipeId, _id } = req.body;
@@ -980,7 +977,7 @@ app.get("/", (req, res) => {
     
     app.delete(
       "/api/reportRemove",
-      verifyToken,
+
       verifyAdmin,
       async (req, res) => {
         try {
