@@ -51,7 +51,6 @@ const verifyUser = async (req, res, next) => {
   next();
 };
 
-
 const verifyAdmin = async (req, res, next) => {
   const user = await req.user;
   if (user.role !== "admin") {
@@ -63,29 +62,25 @@ const verifyAdmin = async (req, res, next) => {
 const run = async () => {
   try {
     // await client.connect();
-    const database = client.db("idea_vault");
-    const ideasCollection = database.collection("ideas");
-const db = client.db("recipe-hub-server");
-const recipeCollection = db.collection("recipe-collection");
-const sessionCollection = db.collection("session");
-const userCollection = db.collection("user");
-const myFavoritesCollections = db.collection("favorites");
-const planCollection = db.collection("plans");
-const subsCollection = db.collection("subscriptions");
-const purchasedRecipes = db.collection("purchasedRecipes");
-const featuredCollection = db.collection("featured");
-const reportCollection = db.collection("reports");
-const likedRecipesCollection = db.collection("likedRecipes");
-
+    // const database = client.db("recipe-hub-server");
+    const db = client.db("recipe-hub-server");
+    const recipeCollection = db.collection("recipe-collection");
+    const sessionCollection = db.collection("session");
+    const userCollection = db.collection("user");
+    const myFavoritesCollections = db.collection("favorites");
+    const planCollection = db.collection("plans");
+    const subsCollection = db.collection("subscriptions");
+    const purchasedRecipes = db.collection("purchasedRecipes");
+    const featuredCollection = db.collection("featured");
+    const reportCollection = db.collection("reports");
+    const likedRecipesCollection = db.collection("likedRecipes");
 
     app.get("/", (req, res) => {
-  res.send("recipe hub server is running");
-});
+      res.send("recipe hub server is running");
+    });
 
-
-     app.get("/api/recipes", async (req, res) => {
+    app.get("/api/recipes", async (req, res) => {
       try {
-        
         const page = parseInt(req.query.page) || 1;
         const size = parseInt(req.query.size) || 10;
         const category = req.query.category || "";
@@ -112,8 +107,7 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
-    app.get("/api/recipes/:id", verifyToken ,async (req, res) => {
+    app.get("/api/recipes/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -135,8 +129,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
-
     app.get("/api/recipe/authorId", verifyToken, async (req, res) => {
       try {
         const authorId = req.query.authorId;
@@ -154,7 +146,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.get("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       const userId = req.query.userId;
       const query = {};
@@ -167,7 +158,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       res.json(result);
     });
 
-    
     app.get("/api/plans", async (req, res) => {
       try {
         const query = {};
@@ -175,7 +165,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
           query.planId = req.query.planId;
         }
 
-        
         const result = await planCollection.find(query).toArray();
 
         res.json(result);
@@ -184,7 +173,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.get(
       "/api/subscriptions",
       verifyToken,
@@ -196,7 +184,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       },
     );
 
-    
     app.get(
       "/api/purchasedData",
       verifyToken,
@@ -208,7 +195,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       },
     );
 
-    
     app.get("/api/purchased", verifyToken, verifyUser, async (req, res) => {
       const userEmail = req.query.email;
       const query = {};
@@ -219,17 +205,18 @@ const likedRecipesCollection = db.collection("likedRecipes");
       res.json(result);
     });
 
-    
     app.get("/api/check-purchase", verifyToken, async (req, res) => {
       try {
         const { recipeId } = req.query;
 
         if (!recipeId) {
-          return res.json({ canPurchase: true }); 
+          return res.json({ canPurchase: true });
         }
 
         // Check if user is the recipe owner
-        const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(recipeId),
+        });
         if (recipe && recipe.authorId === req.user._id.toString()) {
           return res.json({
             canPurchase: false,
@@ -253,7 +240,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.get("/api/premiumuser", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const query = { plan: "Recipehub_Premium" };
@@ -265,50 +251,44 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
       const cursor = reportCollection.find();
       const result = await cursor.toArray();
       res.json(result);
     });
 
-    
     app.get("/api/featured", async (req, res) => {
       const cursor = featuredCollection.find();
       const recipes = await cursor.toArray();
       res.json(recipes);
     });
 
-    
     app.get("/api/featured/:id", verifyToken, verifyUser, async (req, res) => {
       const id = req.params.id;
       console.log(id, "id");
 
-      const query = { _id: new ObjectId(id) }; 
+      const query = { _id: new ObjectId(id) };
 
       const result = await featuredCollection.findOne(query);
       console.log(result, "recipe");
       res.json(result);
     });
 
-    
     app.get("/api/mostLiked", async (req, res) => {
       try {
         const result = await recipeCollection
-          .find() 
-          .sort({ likesCount: -1 }) 
-          .limit(4) 
-          .toArray(); 
+          .find()
+          .sort({ likesCount: -1 })
+          .limit(4)
+          .toArray();
 
-        res.send(result); 
+        res.send(result);
       } catch (error) {
         console.error("Error fetching most liked recipes:", error);
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
 
-    
-    
     app.post("/api/recipes", verifyToken, verifyUser, async (req, res) => {
       const recipe = req.body;
       const newRecipe = {
@@ -320,35 +300,30 @@ const likedRecipesCollection = db.collection("likedRecipes");
       res.json({ insertedId: result.insertedId.toString() });
     });
 
-    
     app.post("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       try {
         const data = req.body;
-        const { _id, ...recipeData } = data; 
+        const { _id, ...recipeData } = data;
 
         const recipeId = _id;
-        const userId = recipeData.userId; 
+        const userId = recipeData.userId;
 
-        
         const query = { userId: userId, recipeId: recipeId };
         const alreadyFavorited = await myFavoritesCollections.findOne(query);
 
         if (alreadyFavorited) {
-          
           return res.status(400).json({
             success: false,
             message: "You have already added this recipe to your favorites!",
           });
         }
 
-        
         const favorite = {
           ...recipeData,
           recipeId: recipeId,
           createdAt: new Date(),
         };
 
-        
         const result = await myFavoritesCollections.insertOne(favorite);
 
         res.status(201).json({
@@ -362,11 +337,10 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.post("/api/featuring", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const data = req.body;
-        const recipeId = data._id; 
+        const recipeId = data._id;
 
         if (!recipeId) {
           return res
@@ -374,20 +348,14 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ success: false, message: "Recipe ID is required" });
         }
 
-        
         const query = { recipeId: recipeId };
         const alreadyFeatured = await featuredCollection.findOne(query);
 
-        
         const recipeFilter = { _id: new ObjectId(recipeId) };
 
         if (alreadyFeatured) {
-          
-
-          
           await featuredCollection.deleteOne(query);
 
-          
           await recipeCollection.updateOne(recipeFilter, {
             $set: { isFeatured: false },
           });
@@ -398,9 +366,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
             isFeatured: false,
           });
         } else {
-          
-
-          
           const { _id, ...restOfData } = data;
           const featured = {
             ...restOfData,
@@ -408,10 +373,8 @@ const likedRecipesCollection = db.collection("likedRecipes");
             createdAt: new Date(),
           };
 
-          
           const result = await featuredCollection.insertOne(featured);
 
-          
           await recipeCollection.updateOne(recipeFilter, {
             $set: { isFeatured: true },
           });
@@ -429,7 +392,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.post("/api/subs", verifyToken, async (req, res) => {
       try {
         const data = req.body;
@@ -440,15 +402,13 @@ const likedRecipesCollection = db.collection("likedRecipes");
 
         const userEmail = subsInfo.customerEmail;
         const recipeId = subsInfo.recipeId;
-        const sessionId = subsInfo.sessionId; 
+        const sessionId = subsInfo.sessionId;
 
-        
-        
-        
         if (recipeId) {
-          
           // Check if user is the recipe owner
-          const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
+          const recipe = await recipeCollection.findOne({
+            _id: new ObjectId(recipeId),
+          });
           if (recipe && recipe.authorId === req.user._id.toString()) {
             return res.status(403).json({
               success: false,
@@ -462,7 +422,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
             });
             if (sessionCheck) {
               return res.status(200).json({
-                
                 success: true,
                 message: "This purchase has already been recorded!",
               });
@@ -488,11 +447,7 @@ const likedRecipesCollection = db.collection("likedRecipes");
           });
         }
 
-        
-        
-        
         if (!recipeId) {
-          
           if (sessionId) {
             const sessionCheck = await subsCollection.findOne({
               sessionId: sessionId,
@@ -505,10 +460,8 @@ const likedRecipesCollection = db.collection("likedRecipes");
             }
           }
 
-          
           const result = await subsCollection.insertOne(subsInfo);
 
-          
           const filter = { email: userEmail };
           const updateDocument = {
             $set: { plan: data.planId },
@@ -531,7 +484,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.post("/api/reports", verifyToken, verifyUser, async (req, res) => {
       try {
         const report = req.body;
@@ -560,7 +512,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
           data: result,
         });
       } catch (error) {
-        
         console.error("Error in /api/reports:", error);
         return res.status(500).json({
           success: false,
@@ -570,11 +521,9 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.post("/app/liked", verifyToken, verifyUser, async (req, res) => {
-      const { recipeId, userId, creatorId } = req.body; 
+      const { recipeId, userId, creatorId } = req.body;
 
-      
       if (!recipeId || !userId || !creatorId) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -584,7 +533,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
         const uId = new ObjectId(userId);
         const cId = new ObjectId(creatorId);
 
-        
         const alreadyLiked = await likedRecipesCollection.findOne({
           recipeId: rId,
           userId: uId,
@@ -596,26 +544,22 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ message: "You already liked this recipe" });
         }
 
-        
         await likedRecipesCollection.insertOne({
           recipeId: rId,
           userId: uId,
           createdAt: new Date(),
         });
 
-        
         const recipeUpdate = await recipeCollection.updateOne(
           { _id: rId },
           { $inc: { likesCount: 1 } },
         );
 
-        
         const creatorUpdate = await userCollection.updateOne(
           { _id: cId },
           { $inc: { likesCount: 1 } },
         );
 
-        
         if (
           recipeUpdate.modifiedCount === 0 ||
           creatorUpdate.modifiedCount === 0
@@ -634,9 +578,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
-    
-
     app.patch("/api/recipes", verifyToken, async (req, res) => {
       try {
         const id = req.body.id;
@@ -654,12 +595,10 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ success: false, message: "Data not found" });
         }
         const query = { _id: new ObjectId(id) };
-        
+
         const updateFields = {};
 
-        
         for (const key in updatedData) {
-          
           if (key !== "id" && updatedData[key] !== "") {
             updateFields[key] = updatedData[key];
           }
@@ -672,7 +611,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ success: false, message: "No valid fields to update" });
         }
 
-        
         const result = await recipeCollection.updateOne(query, {
           $set: updateFields,
         });
@@ -694,7 +632,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.patch("/api/user", verifyToken, verifyUser, async (req, res) => {
       try {
         const id = req.body.id;
@@ -712,12 +649,10 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ success: false, message: "Data not found" });
         }
         const query = { _id: new ObjectId(id) };
-        
+
         const updateFields = {};
 
-        
         for (const key in updatedData) {
-          
           if (key !== "id" && updatedData[key] !== "") {
             updateFields[key] = updatedData[key];
           }
@@ -730,7 +665,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ success: false, message: "No valid fields to update" });
         }
 
-        
         const result = await userCollection.updateOne(query, {
           $set: updateFields,
         });
@@ -752,7 +686,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.patch(
       "/api/admin/user-status",
       verifyToken,
@@ -778,7 +711,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
               .json({ success: false, message: "Blocked value is required" });
           }
 
-          
           const targetUser = await userCollection.findOne({
             _id: new ObjectId(id),
           });
@@ -789,7 +721,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
               .json({ success: false, message: "User not found" });
           }
 
-          
           if (targetUser.role === "admin") {
             return res.status(403).json({
               success: false,
@@ -797,7 +728,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
             });
           }
 
-          
           if (targetUser._id.toString() === req.user._id.toString()) {
             return res.status(403).json({
               success: false,
@@ -805,12 +735,10 @@ const likedRecipesCollection = db.collection("likedRecipes");
             });
           }
 
-          
           const isBlocked = blockedInput === "true" || blockedInput === true;
 
           const query = { _id: new ObjectId(id) };
 
-          
           const result = await userCollection.updateOne(query, {
             $set: { blocked: isBlocked },
           });
@@ -822,12 +750,10 @@ const likedRecipesCollection = db.collection("likedRecipes");
           }
 
           if (result.modifiedCount === 0) {
-            return res
-              .status(200)
-              .json({
-                success: true,
-                message: "No changes made to user status",
-              });
+            return res.status(200).json({
+              success: true,
+              message: "No changes made to user status",
+            });
           }
 
           const statusMessage = isBlocked
@@ -845,15 +771,11 @@ const likedRecipesCollection = db.collection("likedRecipes");
       },
     );
 
-    
-
-    
     app.delete("/api/recipes", verifyToken, async (req, res) => {
       try {
-        const id = req.query.id; 
-        console.log(id, "deleted recipe id"); 
+        const id = req.query.id;
+        console.log(id, "deleted recipe id");
 
-        
         if (!id || id === "undefined") {
           return res
             .status(400)
@@ -863,7 +785,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
         const query = { _id: new ObjectId(id) };
         const result = await recipeCollection.deleteOne(query);
 
-        
         return res.json(result);
       } catch (error) {
         console.error("Express Delete Error:", error);
@@ -871,13 +792,11 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.delete("/api/favorite", verifyToken, verifyUser, async (req, res) => {
       try {
-        const id = req.query.id; 
-        console.log(id, "deleted recipe id"); 
+        const id = req.query.id;
+        console.log(id, "deleted recipe id");
 
-        
         if (!id || id === "undefined") {
           return res
             .status(400)
@@ -887,7 +806,6 @@ const likedRecipesCollection = db.collection("likedRecipes");
         const query = { _id: new ObjectId(id) };
         const result = await myFavoritesCollections.deleteOne(query);
 
-        
         return res.json(result);
       } catch (error) {
         console.error("Express Delete Error:", error);
@@ -895,10 +813,8 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
     app.delete("/api/report", verifyToken, verifyAdmin, async (req, res) => {
       try {
-        
         const { recipeId, _id } = req.body;
 
         if (!recipeId || !_id) {
@@ -907,17 +823,14 @@ const likedRecipesCollection = db.collection("likedRecipes");
             .json({ message: "recipeId and report id are required" });
         }
 
-        
         const recipeResult = await recipeCollection.deleteOne({
           _id: new ObjectId(recipeId),
         });
 
-        
         const reportResult = await reportCollection.deleteOne({
           _id: new ObjectId(_id),
         });
 
-        
         if (
           recipeResult.deletedCount === 0 &&
           reportResult.deletedCount === 0
@@ -938,28 +851,22 @@ const likedRecipesCollection = db.collection("likedRecipes");
       }
     });
 
-    
-
-    
     app.delete(
       "/api/reportRemove",
       verifyToken,
       verifyAdmin,
       async (req, res) => {
         try {
-          
           const { _id } = req.body;
 
           if (!_id) {
             return res.status(400).json({ message: " report id are required" });
           }
 
-          
           const reportResult = await reportCollection.deleteOne({
             _id: new ObjectId(_id),
           });
 
-          
           if (reportResult.deletedCount === 0) {
             return res
               .status(404)
