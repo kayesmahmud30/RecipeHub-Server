@@ -39,10 +39,10 @@ app.use(cors());
 app.use(express.json());
 
 
-client.connect()
-  .then(() => client.db("admin").command({ ping: 1 }))
-  .then(() => console.log("Successfully connected to MongoDB!"))
-  .catch((err) => console.error("MongoDB connection failed:", err.message));
+// client.connect()
+//   .then(() => client.db("admin").command({ ping: 1 }))
+//   .then(() => console.log("Successfully connected to MongoDB!"))
+//   .catch((err) => console.error("MongoDB connection failed:", err.message));
 
 
 
@@ -131,15 +131,13 @@ app.get("/", (req, res) => {
           query.category = req.query.category;
         }
         const totalRecipes = await recipeCollection.countDocuments(query);
-        // কতগুলো ডাটা বাদ (skip) দিতে হবে তা হিসাব করা
+       
         const skipCount = (page - 1) * size;
 
-        // নির্দিষ্ট পরিমাণ ডাটা ফেচ করা
+        
         const cursor = recipeCollection.find(query).skip(skipCount).limit(size);
         const recipes = await cursor.toArray();
-        // মোট রেসিপির সংখ্যা জানা (ফ্রন্টএন্ডে টোটাল পেজ হিসাব করার জন্য লাগবে)
 
-        // ডাটা এবং টোটাল কাউন্ট একসাথে পাঠানো
         res.json({
           totalRecipes,
           recipes,
@@ -702,7 +700,6 @@ app.get("/", (req, res) => {
           }
         }
 
-        // যদি এমন হয় যে ইউজার শুধু খালি ফিল্ডই পাঠিয়েছে
         if (Object.keys(updateFields).length === 0) {
           return res
             .status(400)
@@ -760,7 +757,6 @@ app.get("/", (req, res) => {
           }
         }
 
-        // যদি এমন হয় যে ইউজার শুধু খালি ফিল্ডই পাঠিয়েছে
         if (Object.keys(updateFields).length === 0) {
           return res
             .status(400)
