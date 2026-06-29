@@ -3,6 +3,12 @@ const app = express();
 const port = process.env.PORT || 8000;
 const cors = require("cors");
 require("dotenv").config();
+// const { createRemoteJWKSet, jwtVerify } = require("jose");
+const { jwtVerify, createRemoteJWKSet } = require("jose-cjs");
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)
+);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = process.env.MONGODB_CONNECTION;
@@ -32,6 +38,79 @@ const likedRecipesCollection = db.collection("likedRecipes");
 app.use(cors());
 app.use(express.json());
 
+
+client.connect()
+  .then(() => client.db("admin").command({ ping: 1 }))
+  .then(() => console.log("Successfully connected to MongoDB!"))
+  .catch((err) => console.error("MongoDB connection failed:", err.message));
+
+
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+    
+    const userId = payload.sub;
+    if (!userId) {
+       return res.status(401).send({ message: "Invalid token payload" });
+    }
+
+    let userQuery;
+    if (ObjectId.isValid(userId)) {
+      // It might be stored as an ObjectId or string, check ObjectId first
+      userQuery = { _id: new ObjectId(userId) };
+    } else {
+      userQuery = { _id: userId };
+    }
+
+    let user = await userCollection.findOne(userQuery);
+    
+    // Fallback if better-auth stored it purely as string in MongoDB
+    if (!user && ObjectId.isValid(userId)) {
+      user = await userCollection.findOne({ _id: userId });
+    }
+
+    if (!user) {
+      return res.status(403).send({ message: "User not found" });
+    }
+    
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("====== JWT VERIFICATION FAILED ======");
+    console.error("Error Message:", error.message);
+    console.error("Token that was passed:", token);
+    console.error("=====================================");
+    return res.status(403).send({ message: "forbidden" });
+  }
+};
+
+
+const verifyUser = async (req, res, next) => {
+  const user = await req.user;
+  if (user.role !== "user") {
+    return res.status(403).send({ message: "forbidden" });
+  }
+  next();
+};
+
+
+const verifyAdmin = async (req, res, next) => {
+  const user = await req.user;
+  if (user.role !== "admin") {
+    return res.status(403).send({ message: "forbidden" });
+  }
+  next();
+};
 
 app.get("/", (req, res) => {
   res.send("recipe hub server is running");
@@ -95,7 +174,7 @@ app.get("/", (req, res) => {
 
     
 
-    app.get("/api/recipe/authorId", async (req, res) => {
+    app.get("/api/recipe/authorId", verifyToken, async (req, res) => {
       try {
         const authorId = req.query.authorId;
         const query = {};
@@ -113,7 +192,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/app/myFavorites", async (req, res) => {
+    app.get("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       const userId = req.query.userId;
       const query = {};
       if (req.query.userId) {
@@ -145,6 +224,8 @@ app.get("/", (req, res) => {
     
     app.get(
       "/api/subscriptions",
+      verifyToken,
+      verifyAdmin,
       async (req, res) => {
         const cursor = subsCollection.find();
         const subs = await cursor.toArray();
@@ -155,6 +236,8 @@ app.get("/", (req, res) => {
     
     app.get(
       "/api/purchasedData",
+      verifyToken,
+      verifyAdmin,
       async (req, res) => {
         const cursor = purchasedRecipes.find();
         const recipes = await cursor.toArray();
@@ -163,7 +246,7 @@ app.get("/", (req, res) => {
     );
 
     
-    app.get("/api/purchased", async (req, res) => {
+    app.get("/api/purchased", verifyToken, verifyUser, async (req, res) => {
       const userEmail = req.query.email;
       const query = {};
       if (req.query.email) {
@@ -174,9 +257,9 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/check-purchase", async (req, res) => {
+    app.get("/api/check-purchase", verifyToken, async (req, res) => {
       try {
-        const { recipeId, userId, userEmail } = req.query;
+        const { recipeId } = req.query;
 
         if (!recipeId) {
           return res.json({ canPurchase: true }); 
@@ -184,23 +267,21 @@ app.get("/", (req, res) => {
 
         // Check if user is the recipe owner
         const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
-        if (recipe && userId && recipe.authorId === userId) {
+        if (recipe && recipe.authorId === req.user._id.toString()) {
           return res.json({
             canPurchase: false,
             message: "You cannot purchase your own recipe.",
           });
         }
 
-        if (userEmail) {
-          const query = { customerEmail: userEmail, recipeId };
-          const alreadyPurchased = await purchasedRecipes.findOne(query);
+        const query = { customerEmail: req.user.email, recipeId };
+        const alreadyPurchased = await purchasedRecipes.findOne(query);
 
-          if (alreadyPurchased) {
-            return res.json({
-              canPurchase: false,
-              message: "You have already purchased this recipe!",
-            });
-          }
+        if (alreadyPurchased) {
+          return res.json({
+            canPurchase: false,
+            message: "You have already purchased this recipe!",
+          });
         }
 
         return res.json({ canPurchase: true });
@@ -210,7 +291,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/premiumuser", async (req, res) => {
+    app.get("/api/premiumuser", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const query = { plan: "Recipehub_Premium" };
         const cursor = userCollection.find(query);
@@ -222,7 +303,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/reports", async (req, res) => {
+    app.get("/api/reports", verifyToken, verifyAdmin, async (req, res) => {
       const cursor = reportCollection.find();
       const result = await cursor.toArray();
       res.json(result);
@@ -236,7 +317,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.get("/api/featured/:id", async (req, res) => {
+    app.get("/api/featured/:id", verifyToken, verifyUser, async (req, res) => {
       const id = req.params.id;
       console.log(id, "id");
 
@@ -265,7 +346,7 @@ app.get("/", (req, res) => {
 
     
     
-    app.post("/api/recipes", async (req, res) => {
+    app.post("/api/recipes", verifyToken, verifyUser, async (req, res) => {
       const recipe = req.body;
       const newRecipe = {
         ...recipe,
@@ -277,7 +358,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/app/myFavorites", async (req, res) => {
+    app.post("/app/myFavorites", verifyToken, verifyUser, async (req, res) => {
       try {
         const data = req.body;
         const { _id, ...recipeData } = data; 
@@ -319,7 +400,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/featuring", async (req, res) => {
+    app.post("/api/featuring", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const data = req.body;
         const recipeId = data._id; 
@@ -386,7 +467,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/subs", async (req, res) => {
+    app.post("/api/subs", verifyToken, async (req, res) => {
       try {
         const data = req.body;
         const subsInfo = {
@@ -397,7 +478,6 @@ app.get("/", (req, res) => {
         const userEmail = subsInfo.customerEmail;
         const recipeId = subsInfo.recipeId;
         const sessionId = subsInfo.sessionId; 
-        const userId = subsInfo.userId; 
 
         
         
@@ -406,7 +486,7 @@ app.get("/", (req, res) => {
           
           // Check if user is the recipe owner
           const recipe = await recipeCollection.findOne({ _id: new ObjectId(recipeId) });
-          if (recipe && userId && recipe.authorId === userId) {
+          if (recipe && recipe.authorId === req.user._id.toString()) {
             return res.status(403).json({
               success: false,
               message: "You cannot purchase your own recipe.",
@@ -489,7 +569,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/api/reports", async (req, res) => {
+    app.post("/api/reports", verifyToken, verifyUser, async (req, res) => {
       try {
         const report = req.body;
         if (!report) {
@@ -510,12 +590,12 @@ app.get("/", (req, res) => {
           });
         }
 
-    const result = await reportCollection.insertOne(report);
-    return res.status(200).json({
-      success: true,
-      message: "Thank you for your report. We will review it.",
-      data: result,
-    });
+        const result = reportCollection.insertOne(report);
+        return res.status(200).json({
+          success: true,
+          message: "Thank you for your report. We will review it.",
+          data: result,
+        });
       } catch (error) {
         
         console.error("Error in /api/reports:", error);
@@ -528,7 +608,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.post("/app/liked", async (req, res) => {
+    app.post("/app/liked", verifyToken, verifyUser, async (req, res) => {
       const { recipeId, userId, creatorId } = req.body; 
 
       
@@ -594,7 +674,7 @@ app.get("/", (req, res) => {
     
     
 
-    app.patch("/api/recipes", async (req, res) => {
+    app.patch("/api/recipes", verifyToken, async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -652,7 +732,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.patch("/api/user", async (req, res) => {
+    app.patch("/api/user", verifyToken, verifyUser, async (req, res) => {
       try {
         const id = req.body.id;
 
@@ -712,6 +792,8 @@ app.get("/", (req, res) => {
     
     app.patch(
       "/api/admin/user-status",
+      verifyToken,
+      verifyAdmin,
       async (req, res) => {
         try {
           const id = req.body.id;
@@ -753,8 +835,12 @@ app.get("/", (req, res) => {
           }
 
           
-          // Remove self-block check since JWT auth is removed
-          // The frontend should prevent admins from blocking themselves
+          if (targetUser._id.toString() === req.user._id.toString()) {
+            return res.status(403).json({
+              success: false,
+              message: "You cannot block your own account",
+            });
+          }
 
           
           const isBlocked = blockedInput === "true" || blockedInput === true;
@@ -799,7 +885,7 @@ app.get("/", (req, res) => {
     
 
     
-    app.delete("/api/recipes", async (req, res) => {
+    app.delete("/api/recipes", verifyToken, async (req, res) => {
       try {
         const id = req.query.id; 
         console.log(id, "deleted recipe id"); 
@@ -823,7 +909,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.delete("/api/favorite", async (req, res) => {
+    app.delete("/api/favorite", verifyToken, verifyUser, async (req, res) => {
       try {
         const id = req.query.id; 
         console.log(id, "deleted recipe id"); 
@@ -847,7 +933,7 @@ app.get("/", (req, res) => {
     });
 
     
-    app.delete("/api/report", async (req, res) => {
+    app.delete("/api/report", verifyToken, verifyAdmin, async (req, res) => {
       try {
         
         const { recipeId, _id } = req.body;
@@ -894,7 +980,8 @@ app.get("/", (req, res) => {
     
     app.delete(
       "/api/reportRemove",
-
+      verifyToken,
+      verifyAdmin,
       async (req, res) => {
         try {
           
